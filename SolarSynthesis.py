@@ -31,6 +31,7 @@ import datetime
 from datetime import timedelta as tdelta
 from multiprocessing import Pool
 from joblib import Parallel, delayed
+import os
 
 ROOT_DIR = os.path.join(os.curdir, '%s')
 
@@ -64,10 +65,10 @@ def main(solar_sites):
     #### Preload the Spectral amplitude with different frequencies as a function of
     ####  the hourly clearsky index
     try:
-        psd = power_spectral_density()
-    except ImportError:
         #### Load from stored file 
         psd = cPickle.load(open(ROOT_DIR % 'clearsky_index_psd.pkl', 'rb'))
+    except IOError:
+        psd = power_spectral_density()
 
     #### Calculate the correlation matrix based on the distance between the sites 
     freqs = psd['1.00']['freq']
@@ -75,10 +76,10 @@ def main(solar_sites):
 
     #### Preload the within-hour distribution of clearsky index lookup table
     try:
-        cdf = clearsky_index_distribution(psd.items.values)
-    except ImportError:
         #### Load from stored file 
         cdf = cPickle.load(open(ROOT_DIR % 'clearsky_index_cdf.pkl', 'rb'))
+    except IOError:
+        cdf = clearsky_index_distribution(psd.items.values)
 
     #### For each hour synthesize the 1-min timeseries:
     ## Get the index and initialize the final timeseries 
@@ -467,6 +468,66 @@ def synthesize_hour(dt, parameters):
             TS[id] = TS[id].fillna(float(kbars[id]))
 
     return TS
+
+def test_synthesize_norm_hour(dt, parameters):
+    """ Test function used only to examine a full year of normalized output 
+    Purpose:
+
+    Replicate the function of synthesize_hour(), but direclty output the normalized 
+    timeseries so that a full year can be checked for abnormal behaviour at the hour-
+    to-hour seams.  
+
+    Intput:
+    Same as synthesize_hour()
+
+    Output:
+    TS_norm - normalized time series like TS from synthesize_hour()
+
+    """
+
+    #### Unpack the parameters 
+    solar_sites, site_index, cohere, cdf, psd, freqs = parameters
+
+    #### Calculate the spectral amplitude matrix depending on the sites average
+    ####  clearsky index for the hour and the correlation between sites
+
+    ## Build a DataFrame object that has the hourly clearsky index for each site
+    ## indexed by the site id
+    kbars = [site.clr_idx_hr[dt] for site in solar_sites]
+    kbars = pd.Series(kbars, index = site_index)
+
+    ## Use this hourly average clearsky value to create a spectral magnitude mtx
+    try:
+        S = spectral_amplitude_matrix(kbars, cohere, psd)
+    except KeyError:
+        pdb.set_trace()
+
+    #### Synthesize the 1-min time series or normalized clearksy index 
+    ####  (on a uniform distribution) for each site for the hour
+    TS_norm = synthysize_norm_TS(S, freqs)
+
+    for id in TS_norm.columns:
+        if pd.isnull(TS_norm[id]).sum() >0:
+            print "TS_norm has Nan at " + str(dt) + " !!!"
+            TS_norm[id] = TS_norm[id].fillna(0)
+
+    #### For each site within the hour: 
+    d = {}
+    for id in site_index:
+        d[id] = TS_norm[id].values[:60]
+
+    #### Create a time series index that starts at the begining of the hour 
+    #### (based on dt) and goes to the end of the hour
+    start_dt = dt - datetime.timedelta(seconds = dt.minute * 60)
+    hour_rng = pd.date_range(start_dt, periods=60, freq='min')
+        
+    #### Convert the clearsky index into a timeseries that starts at the
+    #### beginning of the hour and coninutes to the end of the hour
+    TS_norm = pd.DataFrame(d, index = hour_rng)
+
+    return TS_norm 
+
+
 
 def spectral_amplitude_matrix(kbars, cohere, psd ):
     """
@@ -886,6 +947,41 @@ def test_TS():
     TS = synthysize_norm_TS(S, freqs)
     return TS
 
+def test_examine_spectrum(ss):
+    """Examine the spectrum of each site to determine if there are abnormalities
+    
+    Purpose:
+    Examine the spectrum from a full year of synthesized data in order to determine 
+    if there is abnormal power in at the hour-to-hour seams 
+
+    Input:
+    ss - list of SolarSite objects with clr_idx_min attached to each site 
+ 
+    Output:
+    Plot showing spectrum
+
+    """
+    from matplotlib import pyplot as plt
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for s in ss:
+        y = s.clr_idx_min
+        n = len(y) # length of the signal
+        k = np.arange(n)
+        T = n/(1/60.)
+        frq = k/T # two sides frequency range
+        frq = frq[range(n/2)] # one side frequency range
+        Y = np.fft.rfft(y)/n # fft computing and normalization
+        Y = Y[range(n/2)]
+        ax.plot(frq,abs(Y)) # plotting the spectrum
+        
+    plt.xlabel('Freq (Hz)')
+    plt.ylabel('|Y(freq)|')
+        
+    plt.show()
+
+    
+        
 if __name__ == '__main__':
     """
     """
