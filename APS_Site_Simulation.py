@@ -28,8 +28,8 @@ import os
 
 IS_TEST = False
 
-BUILD_HISTORICAL = True
-RUN_NEW_SIMULATIONS = True
+BUILD_HISTORICAL = False
+RUN_NEW_SIMULATIONS = False
 
 REPO_NAME = 'pv_fluctuation_sim'
 PV_PROD_DIR = os.path.join(os.pardir, REPO_NAME + '_data', 
@@ -277,17 +277,36 @@ def sum_sites(ss, data_name):
     return sum_data
 
 def plot_prod(ss):
+    """
+    Purpose:
+    Function to plot the aggregate output of all PV sites in the SolarSite 
+    dictionary
+    
+    Input:
+    ss - dictionary of SolarSites with the site_id as the dictionary key 
+
+    Output:
+    Plot showing the full year of 1-min resutls 
+
+    """
+    #### Sum the output across all of the sites 
     pv_prod_hr = sum_sites(ss, 'pv_prod_hr')
     pv_prod_min = sum_sites(ss, 'pv_prod_min')
     clr_prod_min = sum_sites(ss, 'clr_prod_min')
+
+    #### Create and show the plots 
     fig = plt.figure()
     ax = fig.add_subplot(111)
+
     ax.plot(pv_prod_hr.index, pv_prod_hr, 'k', label = 'PV: hour')
     ax.plot(pv_prod_min.index, pv_prod_min, 'r', label = 'PV: min')
     ax.plot(clr_prod_min.index, clr_prod_min, 'b', label = 'Clear: min')
+
     fig.autofmt_xdate()
     plt.legend()
     plt.show()
+
+
 
 def test_build():
     solar_sites = build_solar_sites('2004')

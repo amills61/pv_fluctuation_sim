@@ -1,6 +1,7 @@
 import string, sys
 import pysam
 import numpy as np
+import os
 
 sam = pysam.PySAM()
 
@@ -26,7 +27,7 @@ def simulate_pv(tech, dc_cap, lat, weather_file):
 
 	cxt = simulate_context( cxt, 'trnsys.pv' )
 	cxt = simulate_context( cxt, 'fin.ipp' )
-	#print 'E_net=',sam.get_d(cxt, 'system.annual.e_net')
+	print 'E_net=',sam.get_d(cxt, 'system.annual.e_net')
 	hourly_power = extract_hourly_ac_power(WORK_DIR + '/hourly.dat')
 
 	sam.free_context(cxt)
@@ -572,5 +573,10 @@ def extract_hourly_ac_power(file_name):
 	for row in reader:
 		row = row.split('\t') 
 		hourly += [float(row[10])]
+
+	#### Delete the file so that it doesn't get used if the next SAM call 
+	#### fails
+	os.remove(file_name)
+
 	# return the time-series of hourly generation data in MW
 	return np.array(hourly)/1000.
