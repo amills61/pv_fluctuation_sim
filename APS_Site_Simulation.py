@@ -48,10 +48,7 @@ def main(year):
     ssites = build_solar_sites(year)
     if IS_TEST:
         ssites = {'1': ssites['1'], '18': ssites['18'], 
-                  '23': ssites['23'], '17': ssites['17'],
-                  '16': ssites['16'], '21': ssites['21'],
-                  '22': ssites['22'], '18': ssites['18'],
-                  '19': ssites['19'], '24': ssites['24']}
+                  '23': ssites['23'], '17': ssites['17']}
 
     if BUILD_HISTORICAL:
         #### For each site generate the hourly PV production, hourly clearsky index 
@@ -119,19 +116,28 @@ def main(year):
             ssites[id].pv_prod_min = pv_prod_min
             ssites[id].has_synth = True
 
-            #### Save the site data to a file 
+            #### Save the site data to a file
+            if IS_TEST:
+                suffix = '_TEST'
+            else:
+                suffix = ''
             complete_file_name = PV_PROD_DIR % \
-                (ssites[id].id + '_' + year + '_complete.pkl')
+                (ssites[id].id + '_' + year + '_complete'+ suffix + '.pkl')
 
             save_file = open(complete_file_name,'wb')
             cPickle.dump(ssites[id], save_file)
             save_file.close()
 
     else:
-        #### Load the historical data from saved files 
+        #### Load the simulated data from saved files
         for id in ssites:
+            print "...Loading site %s" % id
+            if IS_TEST:
+                suffix = '_TEST'
+            else:
+                suffix = ''
             complete_file_name = PV_PROD_DIR % \
-                (ssites[id].id + '_' + year + '_complete.pkl')
+                (ssites[id].id + '_' + year + '_complete' + suffix + '.pkl')
 
             ssites[id] = cPickle.load(open(complete_file_name,'rb'))
         
@@ -139,7 +145,7 @@ def main(year):
 
 def test():
     IS_TEST = True
-    solar_sites = main('2004')
+    solar_sites = main('2005')
     return solar_sites
 
 
@@ -205,7 +211,7 @@ class SolarSite:
     def __str__(self):
         describe = "\nSite id: '%s'" % self.id
         describe += "\nYear: %s" % self.year
-        describe += "\nLocation: %s lat, %s lon" % (self.lat, self.lat)
+        describe += "\nLocation: %s lat, %s lon" % (self.lat, self.lon)
         describe += "\nAC Capacity: %4.1f MW" % self.cap_ac
         describe += "\nConfiguration: '%s'\n" % self.config
         #### Add information about what data has been added to the object?
