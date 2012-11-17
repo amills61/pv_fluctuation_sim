@@ -563,7 +563,12 @@ def simulate_context(cxt, model_name):
 def extract_hourly_ac_power(file_name):
 
 	# Open hourly data
-	reader = open(file_name)
+	try:
+		reader = open(file_name)
+	except IOError:
+		raise Exception("SAM failed to generate hourly data file, " +\
+					"check SAM and run again")
+
 	# Drop header rows (two)
 	junk = reader.next()
 	junk = reader.next()
@@ -576,6 +581,7 @@ def extract_hourly_ac_power(file_name):
 
 	#### Delete the file so that it doesn't get used if the next SAM call 
 	#### fails
+	reader.close()
 	os.remove(file_name)
 
 	# return the time-series of hourly generation data in MW
