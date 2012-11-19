@@ -25,6 +25,7 @@ import cPickle
 from matplotlib import pyplot as plt
 import pdb
 import os
+import numpy as np
 
 IS_TEST = False
 
@@ -48,7 +49,7 @@ def main(year):
     ssites = build_solar_sites(year)
     if IS_TEST:
         ssites = {'1': ssites['1'], '18': ssites['18'], 
-                  '23': ssites['23'], '17': ssites['17']}
+                  '23': ssites['23'], '20': ssites['20']}
 
     if BUILD_HISTORICAL:
         #### For each site generate the hourly PV production, hourly clearsky index 
@@ -143,9 +144,9 @@ def main(year):
         
     return ssites
 
-def test():
+def test(year):
     IS_TEST = True
-    solar_sites = main('2005')
+    solar_sites = main(year)
     return solar_sites
 
 
@@ -225,7 +226,44 @@ class SolarSite:
             describe += "\npv_prod_min: %s pts" % len(self.pv_prod_min) 
         
         return describe
+
+    def save(self):
+        """ Create a csv file for the 1-min clearsky output and the pv production 
+
+        Purpose:
+        Method to create and save csv files with the resulting 1-min clearsky and 
+        production data for each site over the year 
         
+        Output:
+        Saves two csv files with a header of 1 row (Date time (LST), PV output (MW))
+
+        """
+        save_csv(self.id, self.year, self.clr_prod_min, self.pv_prod_min)
+
+def save_aggregate(ss, name):
+    clr = sum_sites(ss, 'clr_prod_min')
+    pv = sum_sites(ss, 'pv_prod_min')
+    save_csv(name, ss[ss.keys()[0]].year, clr, pv)
+    
+def save_csv(file_prefix, year, clr_ts, pv_ts):
+
+    #### Get the datetime marker into a string
+    dt = np.array(['Datetime (LST)'] + [str(t) for t in pv_ts.index])
+    
+    clr = np.array(['Clearsky Output (MW)'] + ['%.2f' % v for v in clr_ts.values])
+    clr = np.column_stack([dt, clr])
+
+    pv = np.array(['PV Output (MW)'] + ['%.2f' % v for v in pv_ts.values])
+    pv = np.column_stack([dt, pv])
+
+    f_name = PV_PROD_DIR % os.path.join('csv', 
+                                        file_prefix + '_' + year + '_%s.csv')   
+    col_fmt = ['%s', '%s']
+    
+    np.savetxt(f_name % 'clr', clr, fmt = col_fmt, delimiter = ',')
+    np.savetxt(f_name % 'pv', pv, fmt = col_fmt, delimiter = ',')
+
+
 def build_solar_sites(year):
     from xlrd import open_workbook,cellname
     from xlwt import Workbook
@@ -270,8 +308,9 @@ def build_solar_sites(year):
         s  = SolarSite(info['site_id'], year, info['lat'], info['lon'], info['w_id'],
                        info['w_name'], info['w_state'], info['cap_ac'], 
                        info['config'])
-        solar_sites[s.id] = s
-    
+
+        solar_sites[s.id] = s  
+
     return solar_sites 
  
 def sum_sites(ss, data_name):
@@ -321,5 +360,5 @@ def test_build():
 if __name__ == '__main__':
     """
     """
-    ss = test()
+    ss = test('2005')
     plot_prod(ss)
