@@ -89,13 +89,13 @@ def test_historical():
     Build the historical insolation file and store it at:
     WEATHER_DIR/historical_1_2004.epw
     """
-    w = {"year": "2004",
-         "id": '722784',
-         "name": 'Phoenix-Deer.Valley.AP.',
+    w = {"year": "2005",
+         "id": '723783',
+         "name": 'Grand.Canyon.National.Park.AP.',
          "state": 'AZ'}
-    lat = "33.45"
-    lon = "-111.95"
-    site_id = "1"
+    lat = "35.25"
+    lon = "-111.45"
+    site_id = "20"
 
     pv_insolation_file = build_historical_insolation_file(w, lat, lon, site_id)
     print pv_insolation_file
@@ -105,11 +105,13 @@ def test_clearsky():
     Build a clearsky insolation EPW file and store it as:
     
     """
-    w = {"year": "2004",
-         "id": '722784',
-         "name": 'Phoenix-Deer.Valley.AP.',
+    w = {"year": "2005",
+         "id": '723783',
+         "name": 'Grand.Canyon.National.Park.AP.',
          "state": 'AZ'}
-    site_id = "1"
+    lat = "35.25"
+    lon = "-111.45"
+    site_id = "20"
     
     clearsky_insolation_file = build_clearksy_insolation_file(w, site_id, clr_insol)
 
@@ -178,6 +180,9 @@ def weather_data(w):
     except KeyError:
         print "\nWARNING: No Historical weather file was available, using TMY" 
         writer, tmy_reader = pass_weather(writer, tmy_reader) 
+    except ValueError:
+        print "\nWARNING: Corrupted historical weather file, using TMY" 
+        writer, tmy_reader = pass_weather(writer, tmy_reader) 
 
     weather_file.close()
     
@@ -216,7 +221,12 @@ def swap_weather(writer, tmy_reader, w):
     for tmy_row in tmy_reader:
         #### Grab the row for the historic weather data
         hist_row = hist_reader.next()
-        
+
+        #### Check for bad data - if all of the first three columns are -9900
+        #### then the data is bad and TMY data should be used instead
+        if int(round(float(hist_row[25]))) == -9900 and int(round(float(hist_row[27]))) == -9900 and int(round(float(hist_row[29]))) == -9900:
+            raise ValueError('Historical weather file appears corrupted, use TMY')
+
         #### Scale the column 31 in the historic data 
         ####  (multily by 100 to convert from mbar to Pa)
         ####  and column 37 (divide by 1000 to convert from m to km)
