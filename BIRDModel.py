@@ -84,8 +84,9 @@ def clearsky(doy, hr, minute, params):
 
     difhz = DIFHZ(ghz, idhz)
 
+    cosz = np.cos(zangle/(180/np.pi))
+    return idn, ghz, difhz, cosz
 
-    return idn, ghz, difhz
 #--------------------
 #--------------------
 #--------------------
@@ -437,7 +438,8 @@ def main():
         
         """
         params = [40, -105, -7, 840, 0.3, 1.5, 0.15, 0.1, 0.85, 0.2] 
-        idn, ghz, difhz = clearsky([2], [2], [10], params)
+        idn, ghz, difhz, cosz = clearsky(np.array([2]), np.array([16]), 
+                                         np.array([10]), params)
 
         print "Direct Normal Isolation: %4.1f W/m^2 => should be 0" % idn
         print "Global Horizontal Isolation: %4.1f W/m^2  => should be 0" % ghz
