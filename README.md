@@ -74,6 +74,7 @@ PVSAMSim.py
 msvcp100.dll
 msvcr100.dll
 ssc32.dll
+samsim.dll
 pysam.py
 --------------------
  - Support files for SAM in order to run SAM from a Python call
