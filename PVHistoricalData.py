@@ -81,16 +81,16 @@ def main(year, lat, lon, site_id, w_id, w_name, w_state, cap_ac, config):
     if config not in ["res", "comm", "usf", "ust"]:
         raise ValueError ("%s is not a valid configuration!" %config)
 
-    #### Create hourly PV production time series (pv_prod_hr)
+    #### Create insolation file for hourly PV production time series (pv_prod_hr)
     pv_insolation_file = gif.build_historical_insolation_file(w, lat, lon, site_id)
-    pv_prod_hr = pv_plant_model(cap_ac, lat, config, year, pv_insolation_file)
-
+    
     #### Create 1-min and 1 hour clearsky insolation time series 
     print "Building 1-min time series of clearsky data"
-    clr_insol_min = bird_model_minute(year, lat, lon)
+    clr_insol_min, cosz_min = bird_model_minute(year, lat, lon)
     clr_insol_hr = get_hourly_average(clr_insol_min)
+    cosz_hr = get_hourly_average(cosz_min)
 
-    #### Create hourly clearsky PV production time series 
+    #### Create insolation file for hourly clearsky PV production time series 
     ## Set the column order as global, direct, diffuse and get the values 
     clr_insol = clr_insol_hr[['ghz','dni','dfhi']].values 
     clr_insolation_file = gif.build_clearksy_insolation_file(w, site_id, clr_insol)
@@ -100,47 +100,50 @@ def main(year, lat, lon, site_id, w_id, w_name, w_state, cap_ac, config):
     if clr_insol[:3].sum() > 0.0:
         pdb.set_trace()
 
+    #### Create the PV production and clearsky production from the insolation files 
+    #### using the SAM model 
     try:
+        pv_prod_hr = pv_plant_model(cap_ac, lat, config, year, pv_insolation_file)
         clr_prod_hr = pv_plant_model(cap_ac, lat, config, year, clr_insolation_file)
     except AssertionError:
         #### If the pv_plant_model cannot calculate the PV production then go into 
         #### debug mode to figure out the cause
-        pdb.set_trace()
+        pdb.set_trace() 
 
     #### Create hourly clearness index time series (clr_idx_hr)
     clr_idx_hr = pv_prod_hr/clr_prod_hr
 
+    #### Set the clearness index to NaN where the cosz for the hour is less than 
+    #### 0.25 (or less than about 15 degrees above the horizon)
+    clr_idx_hr[cosz_hr < 0.25] = None
+
+    ## Identify the hours where the clearsky index is above the level in the 
+    ## DOE ARM Network database
+    clr_idx_hr[clr_idx_hr > 1.2] = None 
+    
     #### Set the clearsky index to the daily average clearsky index 
-    #### where the clearsky production is less than 
-    ####  15% of the maximum 
-    ## Get the average clearsky index for the day
+    #### where the clearsky production is not defined
+
+    ## Get the average clearsky index for the day where the hourly data exists
     clr_idx_day = \
-        (clr_idx_hr.tshift(-30,freq = 'min')).resample('D', how = 'mean', 
-                                                       closed = 'left', 
-                                                       label = 'left')
+        (clr_idx_hr[clr_idx_hr.notnull()].tshift(-30,freq = 'min')
+         ).resample('D', how = 'mean', closed = 'left', label = 'left')
     
-    clr_idx_hr[clr_prod_hr < 0.15*clr_prod_hr.max()] = clr_idx_day 
-
-    ## Identify the hours where the clearsky production is less than 25% of maximum
-    ## in those hours let the clearsky index be the maximum of its estimated value 
-    ## or the average clarsky index for the day
-    clr_idx_hr[(clr_prod_hr < 0.25*clr_prod_hr.max()) & (clr_idx_hr > 1) ] = \
-        clr_idx_day 
-
-    ## Identify the hours where the clearsky index is less than 0.025 - this is 
-    ## likely due to the historical production going to zero earlier than clearsky
-    ## in those hours let the clearsky index be the daily average clearsky index
-    clr_idx_hr[(clr_idx_hr < 0.025)] = clr_idx_day 
+    ## Resample it to hourly and make sure the time stamps line up with the hourly 
+    ## clearsky index data
+    clr_idx_day = clr_idx_day.resample('H', closed = 'right', fill_method = 'pad')
+    last_day = pd.Series(clr_idx_day.ix[-1], 
+                         index = pd.date_range('12/31/%s 01:00:00' % year, 
+                                               periods=23, freq = 'H'))
+    clr_idx_day = pd.concat([clr_idx_day, last_day])
+    clr_idx_day = clr_idx_day.tshift(30, freq = 'min')
     
-    ## Identify the hours where the clearsky index is greater than 1.2 - this is 
-    ## the maximum value in the clearsky index database
-    ## in those hours let the clearsky index be 1.2
-    clr_idx_hr[(clr_idx_hr > 1.2)] = 1.2  
+    ## Replace all the NaN values in the hourly clearsky with the daily average
+    clr_idx_hr = clr_idx_hr.combine_first(clr_idx_day)
 
     #### Create 1-min clearsky PV producton time series (clr_prod_min)
     clr_prod_min = clearsky_production_minute(clr_insol_min, clr_insol_hr, 
-                                             clr_prod_hr)
-
+                                             clr_prod_hr, config)
     #### Return output data
     return pv_prod_hr, clr_idx_hr, clr_prod_min
 
@@ -150,14 +153,14 @@ def test():
     output the results
     """
     year = 2004
-    lat = 33.45
-    lon = -111.95
-    site_id = '1'
-    w_id = '722784'
-    w_name = 'Phoenix-Deer.Valley.AP.'
+    lat = 35.25
+    lon = -111.45
+    site_id = '20'
+    w_id = '723783'
+    w_name = 'Grand.Canyon.National.Park.AP.'
     w_state =  'AZ'
-    cap_ac = 24.6
-    config = "comm"
+    cap_ac = 114.5
+    config = "res"
 
     pv_prod_hr, clr_idx_hr, clr_prod_min = main(year, lat, lon, site_id, w_id, 
                                                           w_name, w_state,
@@ -240,11 +243,14 @@ def bird_model_minute(year, lat, lon):
     lon - Longitude in decimal degrees with positive values for E (str)
 
     Output:
-    clr_insol_min - 1-min clearsky insolation TimeSeries object with 
+    clr_insol_min - 1-min clearsky insolation DataFrame of TimeSeries objects with 
                      direct normal insolation in W/m2 as 'dni', 
                      global horizontal insolation in W/m2 as 'ghz',
                      diffuse horizonal insolation in W/m2 as 'dfhi' 
                      indexed by 'date_time' in GMT
+    cosz_min - 1-min TimeSeries object with cosine of the solar zenith
+                angle (sun is up above horizon when this number
+                is greater than 0 (use 0.15 to be sure it is up)
     
     """
     lat = float(lat)
@@ -265,16 +271,18 @@ def bird_model_minute(year, lat, lon):
     bird_params = [lat, lon,gmtoffset, press, ozone, water, aod380, aod500, 
                    ba, albedo]
 
-    dni, ghz, dfhi = bm.clearsky(rng.dayofyear, rng.hour, rng.minute, bird_params)
+    dni, ghz, dfhi, cosz = bm.clearsky(rng.dayofyear, rng.hour, rng.minute, 
+                                       bird_params)
 
     d = {'ghz': ghz, 'dni': dni, 'dfhi': dfhi} 
     clr_insol_min = pd.DataFrame(d, index = rng, columns = ['ghz','dni','dfhi'])
 
+    cosz_min = pd.Series(cosz, index = rng)
+    
+    return clr_insol_min, cosz_min
 
-    return clr_insol_min
 
-
-def clearsky_production_minute(clr_insol_min, clr_insol_hr, clr_prod_hr):
+def clearsky_production_minute(clr_insol_min, clr_insol_hr, clr_prod_hr, config):
     """
     Status:
     TESTING SEEMS OKAY
@@ -294,6 +302,8 @@ def clearsky_production_minute(clr_insol_min, clr_insol_hr, clr_prod_hr):
                     by the GMT labeled on the half-hour
     clr_prod_hr - TimeSeries object with hourly average of the PV production indexed 
                     by the GMT labeled on the half-hour
+    config - string that is res, comm, usf, or ust.  If ust then use 'dni' for 
+             scaling parameter, 'ghz' otherwise
 
     Output:
     clr_prod_min - TimeSeries object with 1-min clearsky PV production in MW as'val'
@@ -301,7 +311,10 @@ def clearsky_production_minute(clr_insol_min, clr_insol_hr, clr_prod_hr):
     """
 
     #### Get the average scaling parameter for the hour
-    scaling = clr_prod_hr/clr_insol_hr['ghz']
+    if config == 'ust':
+        scaling = clr_prod_hr/clr_insol_hr['dni']
+    else:
+        scaling = clr_prod_hr/clr_insol_hr['ghz']
 
     #### Upsample the hourly data to minute time series 
     ## Upsample by interpolating across hours 
@@ -319,7 +332,10 @@ def clearsky_production_minute(clr_insol_min, clr_insol_hr, clr_prod_hr):
 
     #### Calculate the minmute by minute clearsky production as proprtional to the 
     #### ratio of the hourly average between insolation and pv production
-    clr_prod_min = scaling * clr_insol_min['ghz']
+    if config == 'ust':
+        clr_prod_min = scaling * clr_insol_min['dni']
+    else:
+        clr_prod_min = scaling * clr_insol_min['ghz']
     
     #### Replace any Not a number (nan) values with a zero production 
     clr_prod_min = clr_prod_min.fillna(0)
@@ -436,7 +452,9 @@ def test_pv_plant_model():
     Test the PV plant output with historical insolation data
     """
     root_dir = os.path.join(os.pardir, 'pv_fluctuation_sim_data', 'test', '%s' )
-    insolation_file = root_dir % "historical_1_2004.epw"
+    insolation_file = root_dir % "historical_1_2005.epw"
+
+    print insolation_file
 
     prod_hr = pv_plant_model(24.6, "33.45", "comm", "2004", insolation_file)
 
@@ -471,4 +489,4 @@ if __name__ == '__main__':
 #    pv_prod_hr = test_pv_plant_model()
 #    clr_prod_hr = test_clr_plant_model()
 #    pv_prod_hr, clr_idx_hr, clr_prod_min = test_preloaded()
-    test()
+    pv_prod_hr, clr_idx_hr, clr_prod_min = test()
